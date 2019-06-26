@@ -12,7 +12,6 @@
 
 // Paths
 static const char binPathMetalBronzeDriver[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
-static const char binDyldCache[] = "/private/var/db/dyld/dyld_shared_cache_x86_64h"; // FIXME: better way of patching dyld cache!
 
 static const uint32_t SectionActive = 1;
 
@@ -43,7 +42,6 @@ static UserPatcher::BinaryModPatch allPatches[] = {
 
 static UserPatcher::BinaryModInfo binaryPatches[] {
     { binPathMetalBronzeDriver, allPatches, arrsize(allPatches) },
-    { binDyldCache, allPatches, arrsize(allPatches) },
 };
 
 // main function
