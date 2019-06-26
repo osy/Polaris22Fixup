@@ -73,6 +73,6 @@ PluginConfiguration ADDPR(config) {
     bootargBeta,
     arrsize(bootargBeta),
     KernelVersion::Mojave,
-    KernelVersion::Mojave,
+    KernelVersion::Catalina,
     pluginStart
 };
