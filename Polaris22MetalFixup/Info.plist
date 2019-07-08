@@ -15,17 +15,17 @@
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
-	<string>$(MODULE_VERSION)</string>
+	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>$(MODULE_VERSION)</string>
+	<string>1</string>
 	<key>IOKitPersonalities</key>
 	<dict>
-		<key>Polaris22Fixup</key>
+		<key>$(PRODUCT_NAME:rfc1034identifier)</key>
 		<dict>
 			<key>CFBundleIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>IOClass</key>
-			<string>$(PRODUCT_NAME:rfc1034identifier)</string>
+			<string>IOService</string>
 			<key>IOMatchCategory</key>
 			<string>$(PRODUCT_NAME:rfc1034identifier)</string>
 			<key>IOProviderClass</key>
@@ -38,22 +38,14 @@
 	<string>Copyright © 2019 osy86. All rights reserved.</string>
 	<key>OSBundleLibraries</key>
 	<dict>
-		<key>as.vit9696.Lilu</key>
-		<string>1.2.0</string>
-		<key>com.apple.kpi.bsd</key>
+		<key>com.osy86.CSValidateRangeProxy</key>
 		<string>12.0.0</string>
-		<key>com.apple.kpi.dsep</key>
+		<key>com.apple.kpi.bsd</key>
 		<string>12.0.0</string>
 		<key>com.apple.kpi.iokit</key>
 		<string>12.0.0</string>
 		<key>com.apple.kpi.libkern</key>
 		<string>12.0.0</string>
-		<key>com.apple.kpi.mach</key>
-		<string>12.0.0</string>
-		<key>com.apple.kpi.unsupported</key>
-		<string>12.0.0</string>
 	</dict>
-	<key>OSBundleRequired</key>
-	<string>Root</string>
 </dict>
 </plist>
