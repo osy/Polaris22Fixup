@@ -93,7 +93,7 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
     char path[kPathMaxLen];
     int pathlen = kPathMaxLen;
     boolean_t res = orig_cs_validate_range(vp, pager, offset, data, size, result);
-    if (vn_getpath(vp, path, &pathlen) != 0) {
+    if (vn_getpath(vp, path, &pathlen) == 0) {
         static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path));
         static_assert(sizeof(kDyldCachePath) <= sizeof(path));
         if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
