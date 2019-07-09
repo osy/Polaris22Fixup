@@ -47,6 +47,7 @@ static const struct {
 static const cs_validate_range_t orig_cs_validate_range = (cs_validate_range_t)&gTrampolineToOrig;
 
 static Polaris22MetalFixup *gMetalFixup = NULL;
+static bool gDoNotStart = false;
 
 #pragma mark - Metal patches
 
@@ -122,6 +123,7 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
                 if (!checkKernelArgument("-p22fixupmultiple")) {
                     IOLog("Polaris22MetalFixup: patch done, stopping patcher\n");
                     gMetalFixup->terminate();
+                    gDoNotStart = true;
                 }
             }
         }
@@ -141,8 +143,16 @@ static const struct {
 
 #pragma mark - Patches on start/stop
 
+IOService *Polaris22MetalFixup::probe(IOService *provider, SInt32 *score) {
+    if (gMetalFixup != NULL || gDoNotStart) {
+        return NULL;
+    } else {
+        return super::probe(provider, score);
+    }
+}
+
 bool Polaris22MetalFixup::start(IOService *provider) {
-    if (gMetalFixup != NULL) {
+    if (gMetalFixup != NULL || gDoNotStart) {
         IOLog("Polaris22MetalFixup: already patched! ignoring start\n");
         return false;
     } else {
@@ -158,7 +168,7 @@ bool Polaris22MetalFixup::start(IOService *provider) {
             memcpy((void *)cs_validate_range, &gTrampolineToPatched, sizeof(gTrampolineToPatched));
         });
         gMetalFixup = this;
-        return true;
+        return super::start(provider);
     }
 }
 
@@ -173,4 +183,5 @@ void Polaris22MetalFixup::stop(IOService *provider) {
     } else {
         IOLog("Polaris22MetalFixup: no patches found on stop\n");
     }
+    super::stop(provider);
 }
