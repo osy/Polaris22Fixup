@@ -8,8 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		CE86C33B22D3F0E700435D45 /* CSValidateRangeProxy.kext in CopyFiles */ = {isa = PBXBuildFile; fileRef = CE86C33922D3F0D100435D45 /* CSValidateRangeProxy.kext */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		CEE7C02B22D3D7B60027B805 /* Polaris22MetalFixup.c in Sources */ = {isa = PBXBuildFile; fileRef = CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.c */; };
+		CEE7C02B22D3D7B60027B805 /* Polaris22MetalFixup.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.cpp */; };
 		CEE7C03722D3F5930027B805 /* memmem.c in Sources */ = {isa = PBXBuildFile; fileRef = CEE7C03622D3F5930027B805 /* memmem.c */; };
+		CEE7C03922D4FBD00027B805 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = CEE7C03822D4FBD00027B805 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -26,11 +27,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CE04051C22D45B110034A34B /* Polaris22MetalFixup.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Polaris22MetalFixup.hpp; sourceTree = "<group>"; };
 		CE86C33922D3F0D100435D45 /* CSValidateRangeProxy.kext */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.kernel-extension"; path = CSValidateRangeProxy.kext; sourceTree = "<group>"; };
 		CEE7C02722D3D7B60027B805 /* Polaris22MetalFixup.kext */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Polaris22MetalFixup.kext; sourceTree = BUILT_PRODUCTS_DIR; };
-		CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Polaris22MetalFixup.c; sourceTree = "<group>"; };
+		CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Polaris22MetalFixup.cpp; sourceTree = "<group>"; };
 		CEE7C02C22D3D7B60027B805 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CEE7C03622D3F5930027B805 /* memmem.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = memmem.c; sourceTree = "<group>"; };
+		CEE7C03822D4FBD00027B805 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +50,7 @@
 		CEE7C01D22D3D7B60027B805 = {
 			isa = PBXGroup;
 			children = (
+				CEE7C03822D4FBD00027B805 /* README.md */,
 				CEE7C02922D3D7B60027B805 /* Polaris22MetalFixup */,
 				CEE7C02822D3D7B60027B805 /* Products */,
 			);
@@ -65,7 +69,8 @@
 			children = (
 				CE86C33922D3F0D100435D45 /* CSValidateRangeProxy.kext */,
 				CEE7C03622D3F5930027B805 /* memmem.c */,
-				CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.c */,
+				CEE7C02A22D3D7B60027B805 /* Polaris22MetalFixup.cpp */,
+				CE04051C22D45B110034A34B /* Polaris22MetalFixup.hpp */,
 				CEE7C02C22D3D7B60027B805 /* Info.plist */,
 			);
 			path = Polaris22MetalFixup;
@@ -139,6 +144,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CEE7C03922D4FBD00027B805 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,7 +155,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CEE7C02B22D3D7B60027B805 /* Polaris22MetalFixup.c in Sources */,
+				CEE7C02B22D3D7B60027B805 /* Polaris22MetalFixup.cpp in Sources */,
 				CEE7C03722D3F5930027B805 /* memmem.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -274,8 +280,6 @@
 				CODE_SIGN_IDENTITY = "";
 				INFOPLIST_FILE = Polaris22MetalFixup/Info.plist;
 				MODULE_NAME = com.osy86.Polaris22MetalFixup;
-				MODULE_START = Polaris22MetalFixup_start;
-				MODULE_STOP = Polaris22MetalFixup_stop;
 				MODULE_VERSION = 1.0.0d1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.osy86.Polaris22MetalFixup;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -290,8 +294,6 @@
 				CODE_SIGN_IDENTITY = "";
 				INFOPLIST_FILE = Polaris22MetalFixup/Info.plist;
 				MODULE_NAME = com.osy86.Polaris22MetalFixup;
-				MODULE_START = Polaris22MetalFixup_start;
-				MODULE_STOP = Polaris22MetalFixup_stop;
 				MODULE_VERSION = 1.0.0d1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.osy86.Polaris22MetalFixup;
 				PRODUCT_NAME = "$(TARGET_NAME)";

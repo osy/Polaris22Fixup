@@ -5,19 +5,27 @@
 //  Copyright © 2019 osy86. All rights reserved.
 //
 
+#include "Polaris22MetalFixup.hpp"
 #include <mach/mach_types.h>
 #include <IOKit/IOLib.h>
 #include <i386/proc_reg.h>
 #include <sys/vnode.h>
+#include <libkern/OSKextLib.h>
 
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 
-extern boolean_t cs_validate_range(vnode_t vp,
-                                   memory_object_t pager,
-                                   memory_object_offset_t offset,
-                                   const void *data,
-                                   vm_size_t size,
-                                   unsigned *result);
+#define super IOService
+
+OSDefineMetaClassAndStructors(Polaris22MetalFixup, IOService);
+
+extern "C" boolean_t cs_validate_range(vnode_t vp,
+                                       memory_object_t pager,
+                                       memory_object_offset_t offset,
+                                       const void *data,
+                                       vm_size_t size,
+                                       unsigned *result);
+
+extern "C" void *memmem(const void *h0, size_t k, const void *n0, size_t l);
 
 typedef boolean_t (*cs_validate_range_t)(vnode_t, memory_object_t, memory_object_offset_t, const void *, vm_size_t, unsigned *);
 
@@ -38,6 +46,8 @@ static const struct {
 
 static const cs_validate_range_t orig_cs_validate_range = (cs_validate_range_t)&gTrampolineToOrig;
 
+static Polaris22MetalFixup *gMetalFixup = NULL;
+
 #pragma mark - Metal patches
 
 static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
@@ -51,8 +61,6 @@ static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
 static const char kAmdBronzeMtlDriverPath[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
 
 static const char kDyldCachePath[] = "/private/var/db/dyld/dyld_shared_cache_x86_64h";
-
-extern void *memmem(const void *h0, size_t k, const void *n0, size_t l);
 
 #pragma mark - Kernel patching code
 
@@ -69,7 +77,7 @@ static inline void sti(void) {
 /**
  * Call block with interrupts and protections disabled
  */
-static void doKernelPatch(void (^patchFunc)(void)) {
+void Polaris22MetalFixup::doKernelPatch(void (^patchFunc)(void)) {
     int intrflag = cli();
     uintptr_t cr0 = get_cr0();
     set_cr0(cr0 & ~CR0_WP);
@@ -84,6 +92,11 @@ static void doKernelPatch(void (^patchFunc)(void)) {
 
 #pragma mark - Patched functions
 
+static inline bool checkKernelArgument(const char *name) {
+    int val[16];
+    return PE_parse_boot_argn(name, val, sizeof(val));
+}
+
 static boolean_t patched_cs_validate_range(vnode_t vp,
                                            memory_object_t pager,
                                            memory_object_offset_t offset,
@@ -93,20 +106,27 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
     char path[kPathMaxLen];
     int pathlen = kPathMaxLen;
     boolean_t res = orig_cs_validate_range(vp, pager, offset, data, size, result);
-    if (vn_getpath(vp, path, &pathlen) == 0) {
-        static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path));
-        static_assert(sizeof(kDyldCachePath) <= sizeof(path));
+    if (gMetalFixup && vn_getpath(vp, path, &pathlen) == 0) {
+        static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
+        static_assert(sizeof(kDyldCachePath) <= sizeof(path), "path too long");
         if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
             UNLIKELY(strncmp(path, kDyldCachePath, sizeof(kDyldCachePath)) == 0)) {
             void *res;
             if (UNLIKELY((res = memmem(data, size, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal))) != NULL)) {
                 IOLog("Polaris22MetalFixup: found code to patch!\n");
-                doKernelPatch(^{
-                    static_assert(sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched));
+                gMetalFixup->doKernelPatch(^{
+                    static_assert(sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
                     memcpy(res, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched));
                 });
+                
+                if (!checkKernelArgument("-p22fixupmultiple")) {
+                    IOLog("Polaris22MetalFixup: patch done, stopping patcher\n");
+                    gMetalFixup->terminate();
+                }
             }
         }
+    } else if (!gMetalFixup) {
+        IOLog("Polaris22MetalFixup: patch still exists but patcher is gone, something has gone wrong!\n");
     }
     return res;
 }
@@ -121,26 +141,36 @@ static const struct {
 
 #pragma mark - Patches on start/stop
 
-kern_return_t Polaris22MetalFixup_start(kmod_info_t * ki, void *d) {
-    IOLog("Polaris22MetalFixup: patching cs_validate_range\n");
-    doKernelPatch(^{
-        // first setup the trampoline
-        uintptr_t addr = (uintptr_t)cs_validate_range + sizeof(gTrampolineToOrig.origCode);
-        memcpy((void *)&gTrampolineToOrig.origCode, cs_validate_range, sizeof(gTrampolineToOrig.origCode));
-        memcpy((void *)&gTrampolineToOrig.origAddr, &addr, sizeof(gTrampolineToOrig.origAddr));
-        
-        // then overwrite the original function
-        static_assert(sizeof(gTrampolineToPatched) <= sizeof(gTrampolineToOrig.origCode));
-        memcpy((void *)cs_validate_range, &gTrampolineToPatched, sizeof(gTrampolineToPatched));
-    });
-    return KERN_SUCCESS;
+bool Polaris22MetalFixup::start(IOService *provider) {
+    if (gMetalFixup != NULL) {
+        IOLog("Polaris22MetalFixup: already patched! ignoring start\n");
+        return false;
+    } else {
+        IOLog("Polaris22MetalFixup: patching cs_validate_range\n");
+        doKernelPatch(^{
+            // first setup the trampoline
+            uintptr_t addr = (uintptr_t)cs_validate_range + sizeof(gTrampolineToOrig.origCode);
+            memcpy((void *)&gTrampolineToOrig.origCode, (void *)cs_validate_range, sizeof(gTrampolineToOrig.origCode));
+            memcpy((void *)&gTrampolineToOrig.origAddr, &addr, sizeof(gTrampolineToOrig.origAddr));
+            
+            // then overwrite the original function
+            static_assert(sizeof(gTrampolineToPatched) <= sizeof(gTrampolineToOrig.origCode), "trampoline size invalid");
+            memcpy((void *)cs_validate_range, &gTrampolineToPatched, sizeof(gTrampolineToPatched));
+        });
+        gMetalFixup = this;
+        return true;
+    }
 }
 
-kern_return_t Polaris22MetalFixup_stop(kmod_info_t *ki, void *d) {
-    IOLog("Polaris22MetalFixup: removing patches for cs_validate_range\n");
-    doKernelPatch(^{
-        // restore the original function
-        memcpy((void *)cs_validate_range, &gTrampolineToOrig.origCode, sizeof(gTrampolineToOrig.origCode));
-    });
-    return KERN_SUCCESS;
+void Polaris22MetalFixup::stop(IOService *provider) {
+    if (gMetalFixup == this) {
+        IOLog("Polaris22MetalFixup: removing patches for cs_validate_range\n");
+        doKernelPatch(^{
+            // restore the original function
+            memcpy((void *)cs_validate_range, &gTrampolineToOrig.origCode, sizeof(gTrampolineToOrig.origCode));
+        });
+        gMetalFixup = NULL;
+    } else {
+        IOLog("Polaris22MetalFixup: no patches found on stop\n");
+    }
 }

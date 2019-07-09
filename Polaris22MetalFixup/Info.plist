@@ -25,7 +25,7 @@
 			<key>CFBundleIdentifier</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>IOClass</key>
-			<string>IOService</string>
+			<string>$(PRODUCT_NAME:rfc1034identifier)</string>
 			<key>IOMatchCategory</key>
 			<string>$(PRODUCT_NAME:rfc1034identifier)</string>
 			<key>IOProviderClass</key>

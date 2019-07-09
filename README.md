@@ -16,6 +16,12 @@ Since `cs_validate_range` is not exported by any KPI, we have to manually genera
 
 In the hook, we check that the file getting paged in is either `AMDMTLBronzeDriver` or the shared cache `dyld_shared_cache_x86_64h` which contains every platform binary on the system. Once that matches, we do a pattern search for the function to patch and fix it.
 
+### Boot Args
+
+The default behaviour is to stop patching after the first success (and unload the kernel patches). In theory this is not enough because memory can be paged under high memory load and have to be re-read from the file. However, it would be rare for the userland GPU driver will ever get marked as unused (and get paged).
+
+Nevertheless, the boot-arg `-p22fixupmultiple` is provided to always scan for the pattern to patch, even after first success.
+
 ## Performance
 
 Because we are hooking on a hot piece of code (code signature checking), we need to make sure we are not adversely impacting performance. The two operations we add are a string compare for the path name (as well as potentially needing to generate the path name) as well as finding the pattern to patch (only if the path name matches first).
