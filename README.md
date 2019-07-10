@@ -2,6 +2,8 @@ Polaris22 Metal Driver Fixup
 ============================
 This kext fixes known graphics issues with Polaris22/VegaM on OSX. Only tested/supported on 10.14+. The details of the issue and the fix can be found [here](https://osy.gitbook.io/hac-mini-guide/details/metal-driver-fix).
 
+*Note that this plugin is currently incompatible with any Lilu plugin that uses user patches!*
+
 ## Installation
 
 Copy `Polaris22MetalFixup.kext` to either your `EFI/CLOVER/kexts/Other` directory in your EFI partition or to `/Library/Extensions` on your OSX partition (with SIP disabled).
