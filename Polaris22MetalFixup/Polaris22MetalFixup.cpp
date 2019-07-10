@@ -127,8 +127,6 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
                 }
             }
         }
-    } else if (!gMetalFixup) {
-        IOLog("Polaris22MetalFixup: patch still exists but patcher is gone, something has gone wrong!\n");
     }
     return res;
 }
