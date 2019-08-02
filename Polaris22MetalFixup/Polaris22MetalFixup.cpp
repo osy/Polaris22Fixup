@@ -48,17 +48,32 @@ static const struct {
 
 static const cs_validate_range_t orig_cs_validate_range = (cs_validate_range_t)&gTrampolineToOrig;
 
+static boolean_t patched_cs_validate_range(vnode_t vp,
+                                           memory_object_t pager,
+                                           memory_object_offset_t offset,
+                                           const void *data,
+                                           vm_size_t size,
+                                           unsigned *result);
+
+static const struct {
+    uint8_t jmpInst[6];
+    uintptr_t origAddr;
+} __attribute__((packed)) gTrampolineToPatched = {
+    {0xFF,0x25,0x00,0x00,0x00,0x00}, // JMP [RIP]
+    (uintptr_t)patched_cs_validate_range
+};
+
 static Polaris22MetalFixup *gMetalFixup = NULL;
 static bool gDoNotStart = false;
 
 #pragma mark - Metal patches
 
 static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
-    0xb8, 0x02, 0x00, 0x00, 0x00, 0x0f, 0x43, 0xc1, 0xeb, 0x0f,
+    0xb8, 0x02, 0x00, 0x00, 0x00, 0x0f, 0x43, 0xc1, 0xeb,
 };
 
 static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
-    0xb8, 0x02, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0xeb, 0x0f,
+    0xb8, 0x02, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0xeb,
 };
 
 static const char kAmdBronzeMtlDriverPath[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
