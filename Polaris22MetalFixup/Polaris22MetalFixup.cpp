@@ -33,6 +33,8 @@ typedef boolean_t (*cs_validate_range_t)(vnode_t, memory_object_t, memory_object
 
 static const int kFuncPrefixLength = 20;
 static const int kPathMaxLen = 1024;
+static const uint8_t kLiluShortJmpPrefix[] = {0xE9};
+static const uint8_t kLiluLongJmpPrefix[] = {0xFF,0x25,0x00,0x00,0x00,0x00}; // JMP [RIP+0]
 
 static const struct {
     uint8_t origCode[kFuncPrefixLength];
@@ -91,6 +93,23 @@ void Polaris22MetalFixup::doKernelPatch(void (^patchFunc)(void)) {
     }
 }
 
+/**
+ * Don't allow if Lilu already patched the target.
+ * We must load BEFORE Lilu.
+ */
+bool Polaris22MetalFixup::isLiluPatched(void *from) {
+    if (UNLIKELY(memcmp(from, kLiluShortJmpPrefix, sizeof(kLiluShortJmpPrefix)) == 0)) {
+        //int32_t diff = *(int32_t *)((char *)from + sizeof(kLiluShortJmpPrefix));
+        //return (char *)from + sizeof(kLiluShortJmpPrefix) + sizeof(diff) + diff;
+        return true;
+    } else if (UNLIKELY(memcmp(from, kLiluLongJmpPrefix, sizeof(kLiluLongJmpPrefix)) == 0)) {
+        //return *(void **)((char *)from + sizeof(kLiluLongJmpPrefix));
+        return true;
+    }
+    // FIXME: to recognize anything other than Lilu patches
+    return false;
+}
+
 #pragma mark - Patched functions
 
 static inline bool checkKernelArgument(const char *name) {
@@ -121,23 +140,21 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
                 });
                 
                 if (!checkKernelArgument("-p22fixupmultiple")) {
-                    IOLog("Polaris22MetalFixup: patch done, stopping patcher\n");
-                    gMetalFixup->terminate();
-                    gDoNotStart = true;
+                    if (memcmp((void *)cs_validate_range, &gTrampolineToPatched, sizeof(gTrampolineToPatched)) == 0) {
+                        IOLog("Polaris22MetalFixup: patch done, stopping patcher\n");
+                        gDoNotStart = true;
+                        gMetalFixup->terminate();
+                    } else {
+                        IOLog("Polaris22MetalFixup: Lilu has chained a patch. We cannot clean up and must leak memory.\n");
+                        gDoNotStart = true;
+                        gMetalFixup = NULL;
+                    }
                 }
             }
         }
     }
     return res;
 }
-
-static const struct {
-    uint8_t jmpInst[8];
-    uintptr_t origAddr;
-} __attribute__((packed)) gTrampolineToPatched = {
-    {0xFF,0x25,0x02,0x00,0x00,0x00,0x00,0x00}, // JMP [RIP+2]
-    (uintptr_t)patched_cs_validate_range
-};
 
 #pragma mark - Patches on start/stop
 
@@ -154,6 +171,12 @@ bool Polaris22MetalFixup::start(IOService *provider) {
         IOLog("Polaris22MetalFixup: already patched! ignoring start\n");
         return false;
     } else {
+        if (isLiluPatched((void *)cs_validate_range)) {
+            IOLog("Polaris22MetalFixup: Lilu has already patched cs_validate_range. "
+                  "To prevent kernel panics, we will not patch again. "
+                  "Make sure this kext is loaded BEFORE Lilu to prevent this.\n");
+            return false;
+        }
         IOLog("Polaris22MetalFixup: patching cs_validate_range\n");
         doKernelPatch(^{
             // first setup the trampoline
