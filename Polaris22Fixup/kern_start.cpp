@@ -25,6 +25,14 @@ static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
     0xb8, 0x02, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0xeb,
 };
 
+static const uint8_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
+    0xb9, 0x02, 0x00, 0x00, 0x00, 0x01, 0xc8, 0x41, 0x83, 0xf8, 0x21, 0x0f, 0x42, 0xc1, 0xeb,
+};
+
+static const uint8_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
+    0xb9, 0x02, 0x00, 0x00, 0x00, 0x01, 0xc8, 0x41, 0x83, 0xf8, 0x21, 0x90, 0x90, 0x90, 0xeb,
+};
+
 static const char kAmdBronzeMtlDriverPath[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
 
 static const char kDyldCachePath[] = "/private/var/db/dyld/dyld_shared_cache_x86_64h";
@@ -38,6 +46,10 @@ static KernelPatcher::KextInfo kAMDHWLibsInfo[] = {
 static mach_vm_address_t orig_cs_validate_range {};
 
 static mach_vm_address_t orig_IsEarlySAMUInitEnabled {};
+
+static uint8_t const *patchFind {};
+static uint8_t const *patchReplace {};
+static size_t patchSize;
 
 #pragma mark - Kernel patching code
 
@@ -78,11 +90,10 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
         if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
             UNLIKELY(strncmp(path, kDyldCachePath, sizeof(kDyldCachePath)) == 0)) {
             void *res;
-            if (UNLIKELY((res = memmem(data, size, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal))) != NULL)) {
+            if (UNLIKELY((res = memmem(data, size, patchFind, patchSize)) != NULL)) {
                 SYSLOG(MODULE_SHORT, "found function to patch!");
                 doKernelPatch(^{
-                    static_assert(sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
-                    lilu_os_memcpy(res, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched));
+                    lilu_os_memcpy(res, patchReplace, patchSize);
                 });
             }
         }
@@ -101,6 +112,17 @@ static void pluginStart() {
     LiluAPI::Error error;
     
     DBGLOG(MODULE_SHORT, "start");
+    if (getKernelVersion() >= KernelVersion::BigSur) {
+        patchFind = kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal;
+        patchReplace = kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched;
+        patchSize = sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
+        static_assert(sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
+    } else {
+        patchFind = kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal;
+        patchReplace = kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched;
+        patchSize = sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
+        static_assert(sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
+    }
     error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher){
         DBGLOG(MODULE_SHORT, "patching cs_validate_range");
         mach_vm_address_t kern = patcher.solveSymbol(KernelPatcher::KernelID, "_cs_validate_range");
