@@ -27,13 +27,21 @@ static const uint8_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
     0xb8, 0x02, 0x00, 0x00, 0x00, 0x90, 0x90, 0x90, 0xeb,
 };
 
+static constexpr size_t kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
+
+static_assert(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
+
 static const uint8_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
     0xb9, 0x02, 0x00, 0x00, 0x00, 0x01, 0xc8, 0x41, 0x83, 0xf8, 0x21, 0x0f, 0x42, 0xc1, 0xeb,
 };
 
 static const uint8_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
-    0xb9, 0x02, 0x00, 0x00, 0x00, 0x01, 0xc8, 0x41, 0x83, 0xf8, 0x21, 0x90, 0x90, 0x90, 0xeb,
+    0xb9, 0x02, 0x00, 0x00, 0x00, 0x01, 0xc8, 0x41, 0x83, 0xf8, 0x21, 0x0f, 0x43, 0xc1, 0xeb,
 };
+
+static constexpr size_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
+
+static_assert(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
 
 static const char kAmdBronzeMtlDriverPath[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
 
@@ -53,13 +61,9 @@ static KernelPatcher::KextInfo kAMDHWLibsInfo[] = {
     [kAmdRadeonX4000HwLibs] = { "com.apple.kext.AMDRadeonX4000HWLibs", kAmdRadeonX4000HwLibsPath, arrsize(kAmdRadeonX4000HwLibsPath), {true}, {}, KernelPatcher::KextInfo::Unloaded },
 };
 
-static mach_vm_address_t orig_cs_validate_range {};
+static mach_vm_address_t orig_cs_validate {};
 static mach_vm_address_t orig_IsEarlySAMUInitEnabled {};
 static mach_vm_address_t orig_getHardwareInfo {};
-
-static uint8_t const *patchFind {};
-static uint8_t const *patchReplace {};
-static size_t patchSize;
 
 #pragma mark - Kernel patching code
 
@@ -85,6 +89,7 @@ static void doKernelPatch(void (^patchFunc)(void)) {
 
 #pragma mark - Patched functions
 
+// pre Big Sur
 static boolean_t patched_cs_validate_range(vnode_t vp,
                                            memory_object_t pager,
                                            memory_object_offset_t offset,
@@ -93,17 +98,47 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
                                            unsigned *result) {
     char path[kPathMaxLen];
     int pathlen = kPathMaxLen;
-    boolean_t res = FunctionCast(patched_cs_validate_range, orig_cs_validate_range)(vp, pager, offset, data, size, result);
+    boolean_t res = FunctionCast(patched_cs_validate_range, orig_cs_validate)(vp, pager, offset, data, size, result);
     if (res && vn_getpath(vp, path, &pathlen) == 0) {
         static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
         static_assert(sizeof(kDyldCachePath) <= sizeof(path), "path too long");
         if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
             UNLIKELY(strncmp(path, kDyldCachePath, sizeof(kDyldCachePath)) == 0)) {
             void *res;
-            if (UNLIKELY((res = memmem(data, size, patchFind, patchSize)) != NULL)) {
+            if (UNLIKELY((res = memmem(data, size, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
+                SYSLOG(MODULE_SHORT, "found function to patch!");
+                SYSLOG(MODULE_SHORT, "path: %s", path);
+                doKernelPatch(^{
+                    lilu_os_memcpy(res, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize);
+                });
+            }
+        }
+    }
+    return res;
+}
+
+// For Big Sur
+static boolean_t patched_cs_validate_page(vnode_t vp,
+                                          memory_object_t pager,
+                                          memory_object_offset_t page_offset,
+                                          const void *data,
+                                          int *arg4,
+                                          int *arg5,
+                                          int *arg6) {
+    char path[kPathMaxLen];
+    int pathlen = kPathMaxLen;
+    boolean_t res = FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
+    if (res && vn_getpath(vp, path, &pathlen) == 0) {
+        static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
+        static_assert(sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
+        if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0)) {
+            const void *start = (const char *)data - page_offset;
+            void *res;
+            SYSLOG(MODULE_SHORT, "found path: %s", path);
+            if (UNLIKELY((res = memmem(start, page_offset, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
                 SYSLOG(MODULE_SHORT, "found function to patch!");
                 doKernelPatch(^{
-                    lilu_os_memcpy(res, patchReplace, patchSize);
+                    lilu_os_memcpy(res, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize);
                 });
             }
         }
@@ -132,33 +167,41 @@ static void pluginStart() {
     LiluAPI::Error error;
     
     DBGLOG(MODULE_SHORT, "start");
-    if (getKernelVersion() >= KernelVersion::BigSur) {
-        patchFind = kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal;
-        patchReplace = kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched;
-        patchSize = sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
-        static_assert(sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
-    } else {
-        patchFind = kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal;
-        patchReplace = kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched;
-        patchSize = sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
-        static_assert(sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
-    }
-    error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher){
-        DBGLOG(MODULE_SHORT, "patching cs_validate_range");
-        mach_vm_address_t kern = patcher.solveSymbol(KernelPatcher::KernelID, "_cs_validate_range");
-        
-        if (patcher.getError() == KernelPatcher::Error::NoError) {
-            orig_cs_validate_range = patcher.routeFunctionLong(kern, reinterpret_cast<mach_vm_address_t>(patched_cs_validate_range), true, true);
+    if (getKernelVersion() < KernelVersion::BigSur) {
+        error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher){
+            DBGLOG(MODULE_SHORT, "patching cs_validate_range");
+            mach_vm_address_t kern = patcher.solveSymbol(KernelPatcher::KernelID, "_cs_validate_range");
             
-            if (patcher.getError() != KernelPatcher::Error::NoError) {
-                SYSLOG(MODULE_SHORT, "failed to hook _cs_validate_range");
+            if (patcher.getError() == KernelPatcher::Error::NoError) {
+                orig_cs_validate = patcher.routeFunctionLong(kern, reinterpret_cast<mach_vm_address_t>(patched_cs_validate_range), true, true);
+                
+                if (patcher.getError() != KernelPatcher::Error::NoError) {
+                    SYSLOG(MODULE_SHORT, "failed to hook _cs_validate_range");
+                } else {
+                    DBGLOG(MODULE_SHORT, "hooked cs_validate_range");
+                }
             } else {
-                DBGLOG(MODULE_SHORT, "hooked cs_validate_range");
+                SYSLOG(MODULE_SHORT, "failed to find _cs_validate_range");
             }
-        } else {
-            SYSLOG(MODULE_SHORT, "failed to find _cs_validate_range");
-        }
-    });
+        });
+    } else { // >= macOS 11
+        error = lilu.onPatcherLoad([](void *user, KernelPatcher &patcher){
+            DBGLOG(MODULE_SHORT, "patching cs_validate_page");
+            mach_vm_address_t kern = patcher.solveSymbol(KernelPatcher::KernelID, "_cs_validate_page");
+            
+            if (patcher.getError() == KernelPatcher::Error::NoError) {
+                orig_cs_validate = patcher.routeFunctionLong(kern, reinterpret_cast<mach_vm_address_t>(patched_cs_validate_page), true, true);
+                
+                if (patcher.getError() != KernelPatcher::Error::NoError) {
+                    SYSLOG(MODULE_SHORT, "failed to hook _cs_validate_page");
+                } else {
+                    DBGLOG(MODULE_SHORT, "hooked cs_validate_page");
+                }
+            } else {
+                SYSLOG(MODULE_SHORT, "failed to find _cs_validate_page");
+            }
+        });
+    }
     if (error != LiluAPI::Error::NoError) {
         SYSLOG(MODULE_SHORT, "failed to register onPatcherLoad method: %d", error);
     }
