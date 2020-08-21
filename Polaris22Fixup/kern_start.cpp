@@ -118,7 +118,7 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
 }
 
 // For Big Sur
-static boolean_t patched_cs_validate_page(vnode_t vp,
+static void patched_cs_validate_page(vnode_t vp,
                                           memory_object_t pager,
                                           memory_object_offset_t page_offset,
                                           const void *data,
@@ -127,23 +127,21 @@ static boolean_t patched_cs_validate_page(vnode_t vp,
                                           int *arg6) {
     char path[kPathMaxLen];
     int pathlen = kPathMaxLen;
-    boolean_t res = FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
-    if (res && vn_getpath(vp, path, &pathlen) == 0) {
+    FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
+    if (vn_getpath(vp, path, &pathlen) == 0) {
         static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
         static_assert(sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
         if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0)) {
-            const void *start = (const char *)data - page_offset;
             void *res;
-            SYSLOG(MODULE_SHORT, "found path: %s", path);
-            if (UNLIKELY((res = memmem(start, page_offset, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
+            if (UNLIKELY((res = memmem(data, PAGE_SIZE, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
                 SYSLOG(MODULE_SHORT, "found function to patch!");
+                SYSLOG(MODULE_SHORT, "found path: %s", path);
                 doKernelPatch(^{
                     lilu_os_memcpy(res, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize);
                 });
             }
         }
     }
-    return res;
 }
 
 static int patched_IsEarlySAMUInitEnabled(void *ctx) {
@@ -151,7 +149,7 @@ static int patched_IsEarlySAMUInitEnabled(void *ctx) {
     return 0;
 }
 
-static int patched_getHardwareInfo(void *obj, uint32_t *hwInfo) {
+static int patched_getHardwareInfo(void *obj, uint16_t *hwInfo) {
     int ret = FunctionCast(patched_getHardwareInfo, orig_getHardwareInfo)(obj, hwInfo);
     DBGLOG(MODULE_SHORT, "AMDRadeonX4000_AMDAccelDevice::getHardwareInfo: return 0x%08X");
     if (ret == 0) {
