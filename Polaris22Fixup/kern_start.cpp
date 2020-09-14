@@ -149,6 +149,7 @@ static int patched_IsEarlySAMUInitEnabled(void *ctx) {
     return 0;
 }
 
+// pre Big Sur
 static int patched_getHardwareInfo(void *obj, uint16_t *hwInfo) {
     int ret = FunctionCast(patched_getHardwareInfo, orig_getHardwareInfo)(obj, hwInfo);
     DBGLOG(MODULE_SHORT, "AMDRadeonX4000_AMDAccelDevice::getHardwareInfo: return 0x%08X");
@@ -157,6 +158,14 @@ static int patched_getHardwareInfo(void *obj, uint16_t *hwInfo) {
         *hwInfo = kEllesmereDeviceId;
     }
     return ret;
+}
+
+// For Big Sur
+static void patched_getHardwareInfo_bigsur(void *obj, uint16_t *hwInfo) {
+    FunctionCast(patched_getHardwareInfo, orig_getHardwareInfo)(obj, hwInfo);
+    DBGLOG(MODULE_SHORT, "AMDRadeonX4000_AMDAccelDevice::getHardwareInfo: return 0x%08X");
+    SYSLOG(MODULE_SHORT, "getHardwareInfo: deviceId = 0x%x", *hwInfo);
+    *hwInfo = kEllesmereDeviceId;
 }
 
 #pragma mark - Patches on start/stop
@@ -207,13 +216,25 @@ static void pluginStart() {
         DBGLOG(MODULE_SHORT, "processing AMDRadeonX4000HWLibs");
         for (size_t i = 0; i < arrsize(kAMDHWLibsInfo); i++) {
             if (i == kAmdRadeonX4000 && kAMDHWLibsInfo[i].loadIndex == index) {
-                KernelPatcher::RouteRequest amd_requests[] {
-                    KernelPatcher::RouteRequest("__ZN29AMDRadeonX4000_AMDAccelDevice15getHardwareInfoEP24_sAMD_GET_HW_INFO_VALUES", patched_getHardwareInfo, orig_getHardwareInfo),
-                };
-                if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
-                    DBGLOG(MODULE_SHORT, "patched getHardwareInfo");
-                } else {
-                    SYSLOG(MODULE_SHORT, "failed to patch getHardwareInfo: %d", patcher.getError());
+                if (getKernelVersion() < KernelVersion::BigSur) {
+                    KernelPatcher::RouteRequest amd_requests[] {
+                        KernelPatcher::RouteRequest("__ZN29AMDRadeonX4000_AMDAccelDevice15getHardwareInfoEP24_sAMD_GET_HW_INFO_VALUES", patched_getHardwareInfo, orig_getHardwareInfo),
+                    };
+                    if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
+                        DBGLOG(MODULE_SHORT, "patched getHardwareInfo");
+                    } else {
+                        SYSLOG(MODULE_SHORT, "failed to patch getHardwareInfo: %d", patcher.getError());
+                    }
+                }
+                else{  // >= macOS 11
+                    KernelPatcher::RouteRequest amd_requests[] {
+                        KernelPatcher::RouteRequest("__ZN29AMDRadeonX4000_AMDAccelDevice15getHardwareInfoEP24_sAMD_GET_HW_INFO_VALUES", patched_getHardwareInfo_bigsur, orig_getHardwareInfo),
+                    };
+                    if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
+                        DBGLOG(MODULE_SHORT, "patched getHardwareInfo");
+                    } else {
+                        SYSLOG(MODULE_SHORT, "failed to patch getHardwareInfo: %d", patcher.getError());
+                    }
                 }
             } else if (i == kAmdRadeonX4000HwLibs && kAMDHWLibsInfo[i].loadIndex == index) {
                 KernelPatcher::RouteRequest amd_requests[] {
