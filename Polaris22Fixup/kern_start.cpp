@@ -43,9 +43,11 @@ static constexpr size_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = s
 
 static_assert(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
 
-static const char kAmdBronzeMtlDriverPath[] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
+static const char kAmdBronzeMtlDriverPath[kPathMaxLen] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
 
-static const char kDyldCachePath[] = "/private/var/db/dyld/dyld_shared_cache_x86_64h";
+static const char kDyldCachePath[kPathMaxLen] = "/private/var/db/dyld/dyld_shared_cache_x86_64h";
+
+static const char kBigSurDyldCachePath[kPathMaxLen] = "/System/Library/dyld/dyld_shared_cache_x86_64h";
 
 static const char *kAmdRadeonX4000HwLibsPath[] { "/System/Library/Extensions/AMDRadeonX4000HWServices.kext/Contents/PlugIns/AMDRadeonX4000HWLibs.kext/Contents/MacOS/AMDRadeonX4000HWLibs" };
 
@@ -87,6 +89,26 @@ static void doKernelPatch(void (^patchFunc)(void)) {
     }
 }
 
+template <size_t patchSize>
+static inline void searchAndPatch(const void *haystack,
+                                  size_t haystackSize,
+                                  const char (&path)[kPathMaxLen],
+                                  const char (&dylibCachePath)[kPathMaxLen],
+                                  const uint8_t (&needle)[patchSize],
+                                  const uint8_t (&patch)[patchSize]) {
+    if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
+        UNLIKELY(strncmp(path, dylibCachePath, sizeof(dylibCachePath)) == 0)) {
+        void *res;
+        if (UNLIKELY((res = memmem(haystack, haystackSize, needle, patchSize)) != NULL)) {
+            SYSLOG(MODULE_SHORT, "found function to patch!");
+            SYSLOG(MODULE_SHORT, "path: %s", path);
+            doKernelPatch(^{
+                lilu_os_memcpy(res, patch, patchSize);
+            });
+        }
+    }
+}
+
 #pragma mark - Patched functions
 
 // pre Big Sur
@@ -100,19 +122,7 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
     int pathlen = kPathMaxLen;
     boolean_t res = FunctionCast(patched_cs_validate_range, orig_cs_validate)(vp, pager, offset, data, size, result);
     if (res && vn_getpath(vp, path, &pathlen) == 0) {
-        static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
-        static_assert(sizeof(kDyldCachePath) <= sizeof(path), "path too long");
-        if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0) ||
-            UNLIKELY(strncmp(path, kDyldCachePath, sizeof(kDyldCachePath)) == 0)) {
-            void *res;
-            if (UNLIKELY((res = memmem(data, size, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
-                SYSLOG(MODULE_SHORT, "found function to patch!");
-                SYSLOG(MODULE_SHORT, "path: %s", path);
-                doKernelPatch(^{
-                    lilu_os_memcpy(res, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize);
-                });
-            }
-        }
+        searchAndPatch(data, size, path, kDyldCachePath, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched);
     }
     return res;
 }
@@ -129,18 +139,7 @@ static void patched_cs_validate_page(vnode_t vp,
     int pathlen = kPathMaxLen;
     FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
     if (vn_getpath(vp, path, &pathlen) == 0) {
-        static_assert(sizeof(kAmdBronzeMtlDriverPath) <= sizeof(path), "path too long");
-        static_assert(sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal) == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
-        if (UNLIKELY(strncmp(path, kAmdBronzeMtlDriverPath, sizeof(kAmdBronzeMtlDriverPath)) == 0)) {
-            void *res;
-            if (UNLIKELY((res = memmem(data, PAGE_SIZE, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize)) != NULL)) {
-                SYSLOG(MODULE_SHORT, "found function to patch!");
-                SYSLOG(MODULE_SHORT, "found path: %s", path);
-                doKernelPatch(^{
-                    lilu_os_memcpy(res, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize);
-                });
-            }
-        }
+        searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched);
     }
 }
 
