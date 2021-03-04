@@ -90,7 +90,7 @@ static void doKernelPatch(void (^patchFunc)(void)) {
 }
 
 template <size_t patchSize>
-static inline void searchAndPatch(const void *haystack,
+static inline bool searchAndPatch(const void *haystack,
                                   size_t haystackSize,
                                   const char (&path)[kPathMaxLen],
                                   const char (&dylibCachePath)[kPathMaxLen],
@@ -105,8 +105,10 @@ static inline void searchAndPatch(const void *haystack,
             doKernelPatch(^{
                 lilu_os_memcpy(res, patch, patchSize);
             });
+            return true;
         }
     }
+    return false;
 }
 
 #pragma mark - Patched functions
@@ -139,7 +141,14 @@ static void patched_cs_validate_page(vnode_t vp,
     int pathlen = kPathMaxLen;
     FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
     if (vn_getpath(vp, path, &pathlen) == 0) {
-        searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched);
+        // covers pattern in macOS 11.0-11.2
+        if (searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)) {
+            return;
+        }
+        // covers pattern in macOS 11.3
+        if (searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)) {
+            return;
+        }
     }
 }
 
