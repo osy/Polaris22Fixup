@@ -43,6 +43,19 @@ static constexpr size_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = s
 
 static_assert(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
 
+static const uint8_t kPECI_IsEarlySAMUInitEnabledOriginal[] = {
+    0xbe, 0x60, 0x01, 0x00, 0x00, 0xff, 0x90, 0xb8, 0x00, 0x00, 0x00, 0x31, 0xc9, 0x83, 0xf8, 0x01, 0x0f, 0x94, 0xc1, 0x89, 0xc8, 0x5d, 0xc3,
+};
+
+static const uint8_t kPECI_IsEarlySAMUInitEnabledPatched[] = {
+    0xbe, 0x60, 0x01, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x31, 0xc9, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x89, 0xc8, 0x5d, 0xc3,
+};
+
+static constexpr size_t kPECI_IsEarlySAMUInitEnabledOriginalSize = sizeof(kPECI_IsEarlySAMUInitEnabledOriginal);
+
+static_assert(kPECI_IsEarlySAMUInitEnabledOriginalSize == sizeof(kPECI_IsEarlySAMUInitEnabledPatched), "patch size invalid");
+
+
 static const char kAmdBronzeMtlDriverPath[kPathMaxLen] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
 
 static const char kDyldCachePath[kPathMaxLen] = "/private/var/db/dyld/dyld_shared_cache_x86_64h";
@@ -129,7 +142,7 @@ static boolean_t patched_cs_validate_range(vnode_t vp,
     return res;
 }
 
-// For Big Sur
+// For Big Sur+
 static void patched_cs_validate_page(vnode_t vp,
                                           memory_object_t pager,
                                           memory_object_offset_t page_offset,
@@ -140,13 +153,15 @@ static void patched_cs_validate_page(vnode_t vp,
     char path[kPathMaxLen];
     int pathlen = kPathMaxLen;
     FunctionCast(patched_cs_validate_page, orig_cs_validate)(vp, pager, page_offset, data, arg4, arg5, arg6);
-    if (vn_getpath(vp, path, &pathlen) == 0) {
+    if (vn_getpath(vp, path, &pathlen) == 0 && UserPatcher::matchSharedCachePath(path)) {
         // covers pattern in macOS 11.0-11.2
-        if (searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)) {
+        if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal), kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)))) {
+            DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
             return;
         }
-        // covers pattern in macOS 11.3
-        if (searchAndPatch(data, PAGE_SIZE, path, kBigSurDyldCachePath, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)) {
+        // covers pattern in macOS 11.3+
+        if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal), kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)))) {
+            DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
             return;
         }
     }
@@ -224,13 +239,28 @@ static void pluginStart() {
                     SYSLOG(MODULE_SHORT, "failed to patch getHardwareInfo: %d", patcher.getError());
                 }
             } else if (i == kAmdRadeonX4000HwLibs && kAMDHWLibsInfo[i].loadIndex == index) {
-                KernelPatcher::RouteRequest amd_requests[] {
-                    KernelPatcher::RouteRequest("_PECI_IsEarlySAMUInitEnabled", patched_IsEarlySAMUInitEnabled, orig_IsEarlySAMUInitEnabled),
-                };
-                if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
-                    DBGLOG(MODULE_SHORT, "patched PECI_IsEarlySAMUInitEnabled");
-                } else {
-                    SYSLOG(MODULE_SHORT, "failed to patch PECI_IsEarlySAMUInitEnabled: %d", patcher.getError());
+                //pre Monterey
+                if (getKernelVersion() <= KernelVersion::BigSur) {
+                    KernelPatcher::RouteRequest amd_requests[] {
+                        KernelPatcher::RouteRequest("_PECI_IsEarlySAMUInitEnabled", patched_IsEarlySAMUInitEnabled, orig_IsEarlySAMUInitEnabled),
+                    };
+                    if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
+                        DBGLOG(MODULE_SHORT, "patched PECI_IsEarlySAMUInitEnabled");
+                    } else {
+                        SYSLOG(MODULE_SHORT, "failed to patch PECI_IsEarlySAMUInitEnabled: %d", patcher.getError());
+                    }
+                }
+                //Monterey
+                else {
+                    KernelPatcher::LookupPatch patch = {&kAMDHWLibsInfo[kAmdRadeonX4000HwLibs], kPECI_IsEarlySAMUInitEnabledOriginal, kPECI_IsEarlySAMUInitEnabledPatched, sizeof(kPECI_IsEarlySAMUInitEnabledOriginal), 1};
+                    patcher.applyLookupPatch(&patch);
+                    if (patcher.getError() != KernelPatcher::Error::NoError) {
+                        SYSLOG(MODULE_SHORT, "failed to binary patch PECI_IsEarlySAMUInitEnabled: %d", patcher.getError());
+                        patcher.clearError();
+                        }
+                    else{
+                        DBGLOG(MODULE_SHORT, "binary patched PECI_IsEarlySAMUInitEnabled");
+                    }
                 }
             }
         }
@@ -263,6 +293,6 @@ PluginConfiguration ADDPR(config) {
     bootargBeta,
     arrsize(bootargBeta),
     KernelVersion::Mojave,
-    KernelVersion::BigSur,
+    KernelVersion::Monterey,
     pluginStart
 };
