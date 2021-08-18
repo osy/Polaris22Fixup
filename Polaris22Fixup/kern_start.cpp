@@ -43,17 +43,25 @@ static constexpr size_t kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = s
 
 static_assert(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kBigSurAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
 
-static const uint8_t kPECI_IsEarlySAMUInitEnabledOriginal[] = {
-    0xbe, 0x60, 0x01, 0x00, 0x00, 0xff, 0x90, 0xb8, 0x00, 0x00, 0x00, 0x31, 0xc9, 0x83, 0xf8, 0x01, 0x0f, 0x94, 0xc1, 0x89, 0xc8, 0x5d, 0xc3,
+//patch the 160th bit of CAIL_DDI_CAPS_POLARIS22_A0 to zero
+static const uint8_t kCAIL_DDI_CAPS_POLARIS22_A0Original[] = {
+    0x05, 0x00, 0x80, 0x00, 0xFE, 0x11, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x11, 0x00, 0x02, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x68, 0x00, 0x00, 0x40, 0x29, 0x02, 0x40, 0x00, 0x00, 0x01, 0x01, 0x8A, 0x62, 0x10, 0x86, 0xA2, 0x41,
+    0x00, 0x00, 0x00, 0x22, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
 };
 
-static const uint8_t kPECI_IsEarlySAMUInitEnabledPatched[] = {
-    0xbe, 0x60, 0x01, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x31, 0xc9, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x89, 0xc8, 0x5d, 0xc3,
+static const uint8_t kCAIL_DDI_CAPS_POLARIS22_A0Patched[] = {
+    0x05, 0x00, 0x80, 0x00, 0xFE, 0x11, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x11, 0x00, 0x02, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x68, 0x00, 0x00, 0x40, 0x29, 0x02, 0x40, 0x00, 0x00, 0x01, 0x01, 0x8A, 0x62, 0x10, 0x86, 0xA2, 0x41,
+    0x00, 0x00, 0x00, 0x22, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+
 };
 
-static constexpr size_t kPECI_IsEarlySAMUInitEnabledOriginalSize = sizeof(kPECI_IsEarlySAMUInitEnabledOriginal);
+static constexpr size_t kPECI_IsEarlySAMUInitEnabledOriginalSize = sizeof(kCAIL_DDI_CAPS_POLARIS22_A0Original);
 
-static_assert(kPECI_IsEarlySAMUInitEnabledOriginalSize == sizeof(kPECI_IsEarlySAMUInitEnabledPatched), "patch size invalid");
+static_assert(kPECI_IsEarlySAMUInitEnabledOriginalSize == sizeof(kCAIL_DDI_CAPS_POLARIS22_A0Patched), "patch size invalid");
 
 
 static const char kAmdBronzeMtlDriverPath[kPathMaxLen] = "/System/Library/Extensions/AMDMTLBronzeDriver.bundle/Contents/MacOS/AMDMTLBronzeDriver";
@@ -77,7 +85,6 @@ static KernelPatcher::KextInfo kAMDHWLibsInfo[] = {
 };
 
 static mach_vm_address_t orig_cs_validate {};
-static mach_vm_address_t orig_IsEarlySAMUInitEnabled {};
 static mach_vm_address_t orig_getHardwareInfo {};
 
 #pragma mark - Kernel patching code
@@ -167,11 +174,6 @@ static void patched_cs_validate_page(vnode_t vp,
     }
 }
 
-static int patched_IsEarlySAMUInitEnabled(void *ctx) {
-    DBGLOG(MODULE_SHORT, "PECI_IsEarlySAMUInitEnabled: return 0");
-    return 0;
-}
-
 static int patched_getHardwareInfo(void *obj, uint16_t *hwInfo) {
     int ret = FunctionCast(patched_getHardwareInfo, orig_getHardwareInfo)(obj, hwInfo);
     DBGLOG(MODULE_SHORT, "AMDRadeonX4000_AMDAccelDevice::getHardwareInfo: return 0x%08X");
@@ -239,28 +241,14 @@ static void pluginStart() {
                     SYSLOG(MODULE_SHORT, "failed to patch getHardwareInfo: %d", patcher.getError());
                 }
             } else if (i == kAmdRadeonX4000HwLibs && kAMDHWLibsInfo[i].loadIndex == index) {
-                //pre Monterey
-                if (getKernelVersion() <= KernelVersion::BigSur) {
-                    KernelPatcher::RouteRequest amd_requests[] {
-                        KernelPatcher::RouteRequest("_PECI_IsEarlySAMUInitEnabled", patched_IsEarlySAMUInitEnabled, orig_IsEarlySAMUInitEnabled),
-                    };
-                    if (patcher.routeMultiple(index, amd_requests, address, size, true, true)) {
-                        DBGLOG(MODULE_SHORT, "patched PECI_IsEarlySAMUInitEnabled");
-                    } else {
-                        SYSLOG(MODULE_SHORT, "failed to patch PECI_IsEarlySAMUInitEnabled: %d", patcher.getError());
+                KernelPatcher::LookupPatch patch = {&kAMDHWLibsInfo[kAmdRadeonX4000HwLibs], kCAIL_DDI_CAPS_POLARIS22_A0Original, kCAIL_DDI_CAPS_POLARIS22_A0Patched, sizeof(kCAIL_DDI_CAPS_POLARIS22_A0Original), 1};
+                patcher.applyLookupPatch(&patch);
+                if (patcher.getError() != KernelPatcher::Error::NoError) {
+                    SYSLOG(MODULE_SHORT, "failed to binary patch CAIL_DDI_CAPS_POLARIS22_A0: %d", patcher.getError());
+                    patcher.clearError();
                     }
-                }
-                //Monterey
-                else {
-                    KernelPatcher::LookupPatch patch = {&kAMDHWLibsInfo[kAmdRadeonX4000HwLibs], kPECI_IsEarlySAMUInitEnabledOriginal, kPECI_IsEarlySAMUInitEnabledPatched, sizeof(kPECI_IsEarlySAMUInitEnabledOriginal), 1};
-                    patcher.applyLookupPatch(&patch);
-                    if (patcher.getError() != KernelPatcher::Error::NoError) {
-                        SYSLOG(MODULE_SHORT, "failed to binary patch PECI_IsEarlySAMUInitEnabled: %d", patcher.getError());
-                        patcher.clearError();
-                        }
-                    else{
-                        DBGLOG(MODULE_SHORT, "binary patched PECI_IsEarlySAMUInitEnabled");
-                    }
+                else{
+                    DBGLOG(MODULE_SHORT, "binary patched CAIL_DDI_CAPS_POLARIS22_A0");
                 }
             }
         }
