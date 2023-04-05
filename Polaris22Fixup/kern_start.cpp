@@ -51,6 +51,15 @@ static const uint8_t kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[]
     0x0f, 0x95, 0xc0, 0x31, 0xc0, 0x83, 0xc0, 0x02, 0x5d, 0xc3, 0x55,
 };
 
+static const uint8_t kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
+    0x83, 0xc0, 0x02, 0xeb, 0x0e, 0x31, 0xc0, 0xf6, 0x47, 0x08, 0xc0, 0x0f, 0x95, 0xc0, 0x01, 0xc0, 0x83, 0xc0, 0x02, 0x5d, 0xc3, 0x55,
+};
+
+static const uint8_t kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
+    0x83, 0xc0, 0x02, 0xeb, 0x09, 0x31, 0xc0, 0xf6, 0x47, 0x08, 0xc0, 0x0f, 0x95, 0xc0, 0x31, 0xc0, 0x83, 0xc0, 0x02, 0x5d, 0xc3, 0x55,
+};
+
+
 static constexpr size_t kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = sizeof(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
 
 static_assert(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize == sizeof(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched), "patch size invalid");
@@ -183,11 +192,19 @@ static void patched_cs_validate_page(vnode_t vp,
             DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
             return;
         }
-        // covers pattern in macOS 12.3+
+        // covers pattern in macOS 13.3+
+        // patch for 12.3-13.3 is a substring of this patch. So run this first.
+        // TODO: use getKernelVersion and KernelMinorVersion in Lilu for more clear implementation
+        if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal), kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)))) {
+            DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
+            return;
+        }
+        // covers pattern in macOS 12.3 - 13.2
         if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal), kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)))) {
             DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
             return;
         }
+
     }
 }
 
