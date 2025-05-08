@@ -59,6 +59,27 @@ static const uint8_t kVentura133AmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched
     0x83, 0xc0, 0x02, 0xeb, 0x09, 0x31, 0xc0, 0xf6, 0x47, 0x08, 0xc0, 0x0f, 0x95, 0xc0, 0x31, 0xc0, 0x83, 0xc0, 0x02, 0x5d, 0xc3, 0x55,
 };
 
+/* macOS Sequoia 15+
+ *
+ * 0:  0f 95 c0                setne  al
+ * 3:  8d 04 45 02 00 00 00    lea    eax,[rax*2+0x2] ; patch this out to return ADDR_TM_1D_TILED_THIN1
+ * a:  5d                      pop    rbp
+ * b:  c3                      ret
+ */
+static const uint8_t kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal[] = {
+    0x0f, 0x95, 0xc0, 0x8d, 0x04, 0x45, 0x02, 0x00, 0x00, 0x00, 0x5d, 0xc3,
+};
+
+/* 0:  0f 95 c0                setne  al
+ * 3:  90                      nop
+ * 4:  90                      nop
+ * 5:  b8 02 00 00 00          mov    eax,0x2 ; return ADDR_TM_1D_TILED_THIN1
+ * a:  5d                      pop    ebp
+ * b:  c3                      ret
+ */
+static const uint8_t kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched[] = {
+    0x0f, 0x95, 0xc0, 0x90, 0x90, 0xb8, 0x02, 0x00, 0x00, 0x00, 0x5d, 0xc3,
+};
 
 static constexpr size_t kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnSize = sizeof(kMontereyAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal);
 
@@ -204,7 +225,11 @@ static void patched_cs_validate_page(vnode_t vp,
             DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
             return;
         }
-
+        // covers pattern in macOS 15.0
+        if (UNLIKELY(KernelPatcher::findAndReplace(const_cast<void *>(data), PAGE_SIZE, kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal, sizeof(kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnOriginal), kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched, sizeof(kSequoiaAmdBronzeMtlAddrLibGetBaseArrayModeReturnPatched)))) {
+            DBGLOG(MODULE_SHORT, "found function to patch at %s!", path);
+            return;
+        }
     }
 }
 
@@ -315,6 +340,6 @@ PluginConfiguration ADDPR(config) {
     bootargBeta,
     arrsize(bootargBeta),
     KernelVersion::Mojave,
-    KernelVersion::Ventura,
+    KernelVersion::Sequoia,
     pluginStart
 };

@@ -1,0 +1,11 @@
+# macOS Finder
+.DS_Store
+.Trashes
+
+# Xcode related
+project.xcworkspace/
+xcuserdata/
+
+# Lulu dependency
+Lulu.kext
+Lulu.kext/**
